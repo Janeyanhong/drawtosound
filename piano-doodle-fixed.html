@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>绘图变钢琴声音</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: sans-serif;
+      background-color: #f5f5f5;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    
+    .color-brushes {
+      margin: 20px 0;
+    }
+    
+    .color-brushes h2 {
+      margin-bottom: 10px;
+      color: #444;
+    }
+    
+    .color-palette {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    
+    .color-option {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid #ddd;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .color-option:hover {
+      transform: scale(1.1);
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    .color-option.selected {
+      border: 2px solid #333;
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+    }
+    
+    canvas {
+      display: block;
+      width: 100%;
+      height: 300px;
+      border: 2px solid #ddd;
+      margin: 20px 0;
+      cursor: crosshair;
+    }
+    
+    .button-container {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      font-weight: bold;
+      cursor: pointer;
+      color: white;
+    }
+    
+    .convert-button {
+      background-color: #4CAF50;
+    }
+    
+    .clear-button {
+      background-color: #f44336;
+    }
+    
+    .audio-container {
+      margin-top: 20px;
+      display: none;
+    }
+    
+    audio {
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    
+    .download-button {
+      background-color: #2196F3;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>绘图变钢琴声音</h1>
+    
+    <div class="color-brushes">
+      <h2>不同颜色画笔</h2>
+      <div class="color-palette" id="colorPalette"></div>
+    </div>
+    
+    <canvas id="drawingCanvas"></canvas>
+    
+    <div class="button-container">
+      <button class="clear-button" id="clearButton">清除画布</button>
+      <button class="convert-button" id="convertButton">转换为钢琴声音</button>
+    </div>
+    
+    <div class="audio-container" id="audioContainer">
+      <audio controls id="audioPlayer"></audio>
+      <button class="download-button" id="downloadButton">下载音频</button>
+    </div>
+  </div>
+
+  <script>
+    // 获取DOM元素
+    const canvas = document.getElementById('drawingCanvas');
+    const ctx = canvas.getContext('2d');
+    const colorPalette = document.getElementById('colorPalette');
+    const clearButton = document.getElementById('clearButton');
+    const convertButton = document.getElementById('convertButton');
+    const audioContainer = document.getElementById('audioContainer');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const downloadButton = document.getElementById('downloadButton');
+    
+    // 颜色选项
+    const colors = [
+      '#000000', // 黑色
+      '#FF0000', // 红色
+      '#00FF00', // 绿色
+      '#0000FF', // 蓝色
+      '#FFFF00', // 黄色
+      '#FF00FF', // 洋红
+      '#00FFFF', // 青色
+      '#FFA500', // 橙色
+      '#800080', // 紫色
+      '#008000', // 深绿色
+    ];
+    
+    // 当前选中的颜色
+    let currentColor = colors[0];
+    
+    // 绘图状态
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    
+    // 设置画布尺寸
+    function setupCanvas() {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = currentColor;
+    }
+    
+    // 创建颜色选项
+    function createColorOptions() {
+      colors.forEach((color, index) => {
+        const colorOption = document.createElement('div');
+        colorOption.className = 'color-option';
+        if (index === 0) {
+          colorOption.classList.add('selected');
+        }
+        colorOption.style.backgroundColor = color;
+        colorOption.addEventListener('click', () => {
+          // 移除所有选中状态
+          document.querySelectorAll('.color-option').forEach(option => {
+            option.classList.remove('selected');
+          });
+          // 添加选中状态
+          colorOption.classList.add('selected');
+          // 设置当前颜色
+          currentColor = color;
+          ctx.strokeStyle = color;
+        });
+        colorPalette.appendChild(colorOption);
+      });
+    }
+    
+    // 初始化
+    setupCanvas();
+    createColorOptions();
+    window.addEventListener('resize', setupCanvas);
+    
+    // 绑定事件
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+    canvas.addEventListener('touchstart', handleTouch);
+    canvas.addEventListener('touchmove', handleTouch);
+    canvas.addEventListener('touchend', stopDrawing);
+    
+    // 开始绘图
+    function startDrawing(e) {
+      isDrawing = true;
+      const coords = getCoordinates(e);
+      lastX = coords.x;
+      lastY = coords.y;
+    }
+    
+    // 绘图
+    function draw(e) {
+      if (!isDrawing) return;
+      
+      const coords = getCoordinates(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(coords.x, coords.y);
+      ctx.stroke();
+      
+      lastX = coords.x;
+      lastY = coords.y;
+    }
+    
+    // 停止绘图
+    function stopDrawing() {
+      isDrawing = false;
+    }
+    
+    // 处理触摸事件
+    function handleTouch(e) {
+      e.preventDefault();
+      
+      if (e.type === 'touchstart') {
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        
+        isDrawing = true;
+        lastX = x;
+        lastY = y;
+      } else if (e.type === 'touchmove') {
+        if (!isDrawing) return;
+        
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        
+        lastX = x;
+        lastY = y;
+      }
+    }
+    
+    // 获取坐标
+    function getCoordinates(e) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+    
+    // 清除画布
+    clearButton.addEventListener('click', function() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      audioContainer.style.display = 'none';
+    });
+    
+    // 转换为声音
+    convertButton.addEventListener('click', function() {
+      // 显示正在处理
+      convertButton.textContent = '正在生成...';
+      convertButton.disabled = true;
+      
+      // 延迟执行以允许UI更新
+      setTimeout(function() {
+        try {
+          // 获取画布数据
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          
+          // 创建音频上下文
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          
+          // 检查是否有绘图
+          let hasDrawing = false;
+          for (let i = 3; i < data.length; i += 4) {
+            if (data[i] > 0) {
+              hasDrawing = true;
+              break;
+            }
+          }
+          
+          if (hasDrawing) {
+            // 将画布分成网格
+            const gridWidth = 8;  // 水平方向的网格数
+            const gridHeight = 8; // 垂直方向的网格数
+            const cellWidth = Math.floor(canvas.width / gridWidth);
+            const cellHeight = Math.floor(canvas.height / gridHeight);
+            
+            // 钢琴音符频率 (C大调音阶)
+            const notes = [
+              261.63, // C4
+              293.66, // D4
+              329.63, // E4
+              349.23, // F4
+              392.00, // G4
+              440.00, // A4
+              493.88, // B4
+              523.25  // C5
+            ];
+            
+            // 分析每个网格单元
+            for (let gridY = 0; gridY < gridHeight; gridY++) {
+              for (let gridX = 0; gridX < gridWidth; gridX++) {
+                // 计算网格单元的像素范围
+                const startX = gridX * cellWidth;
+                const startY = gridY * cellHeight;
+                const endX = Math.min(startX + cellWidth, canvas.width);
+                const endY = Math.min(startY + cellHeight, canvas.height);
+                
+                // 分析这个网格单元中的像素
+                let totalBrightness = 0;
+                let pixelCount = 0;
+                let r = 0, g = 0, b = 0;
+                
+                for (let y = startY; y < endY; y++) {
+                  for (let x = startX; x < endX; x++) {
+                    const pixelIndex = (y * canvas.width + x) * 4;
+                    const alpha = data[pixelIndex + 3];
+                    
+                    if (alpha > 0) {
+                      const red = data[pixelIndex];
+                      const green = data[pixelIndex + 1];
+                      const blue = data[pixelIndex + 2];
+                      
+                      // 累加颜色值
+                      r += red;
+                      g += green;
+                      b += blue;
+                      
+                      // 计算亮度
+                      const brightness = (red + green + blue) / (3 * 255);
+                      totalBrightness += brightness;
+                      pixelCount++;
+                    }
+                  }
+                }
+                
+                // 如果这个网格单元有像素
+                if (pixelCount > 0) {
+                  // 计算平均颜色和亮度
+                  r = Math.floor(r / pixelCount);
+                  g = Math.floor(g / pixelCount);
+                  b = Math.floor(b / pixelCount);
+                  const avgBrightness = totalBrightness / pixelCount;
+                  
+                  // 根据网格位置选择音符
+                  const noteIndex = gridY % notes.length;
+                  const frequency = notes[noteIndex];
+                  
+                  // 根据水平位置确定播放时间
+                  const startTime = (gridX / gridWidth) * 4; // 4秒内分布
+                  
+                  // 根据亮度确定音量
+                  const volume = 0.3 + avgBrightness * 0.7; // 音量范围0.3-1.0
+                  
+                  // 创建钢琴音符
+                  createPianoNote(audioCtx, frequency, startTime, volume);
+                }
+              }
+            }
+          } else {
+            // 如果没有绘图，播放简单的钢琴音阶
+            playSimplePianoScale(audioCtx);
+          }
+          
+          // 录制音频
+          const duration = 8; // 8秒录音
+          const offlineCtx = new OfflineAudioContext(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
+          
+          // 等待录制完成
+          offlineCtx.startRendering().then(renderedBuffer => {
+            // 创建WAV文件
+            const wavBlob = audioBufferToWav(renderedBuffer);
+            
+            // 创建URL
+            const audioUrl = URL.createObjectURL(wavBlob);
+            
+            // 设置音频播放器
+            audioPlayer.src = audioUrl;
+            audioContainer.style.display = 'block';
+            
+            // 设置下载按钮
+            downloadButton.onclick = function() {
+              const a = document.createElement('a');
+              a.href = audioUrl;
+              a.download = '钢琴绘图声音.wav';
+              a.click();
+            };
+            
+            // 尝试播放
+            audioPlayer.play().catch(e => {
+              console.warn('自动播放失败:', e);
+              alert('请点击播放按钮来听取声音');
+            });
+            
+            // 重置按钮
+            convertButton.textContent = '转换为钢琴声音';
+            convertButton.disabled = false;
+          }).catch(err => {
+            console.error('渲染音频时出错:', err);
+            alert('生成声音时出错: ' + err.message);
+            convertButton.textContent = '转换为钢琴声音';
+            convertButton.disabled = false;
+          });
+          
+        } catch (error) {
+          console.error('生成声音时出错:', error);
+          alert('生成声音时出错: ' + error.message);
+          convertButton.textContent = '转换为钢琴声音';
+          convertButton.disabled = false;
+        }
+      }, 100);
+    });
+    
+    // 创建钢琴音符
+    function createPianoNote(audioContext, frequency, startTime, volume) {
+      // 创建振荡器
+      const oscillator = audioContext.createOscillator();
+      oscillator.type = 'triangle'; // 三角波更接近钢琴的基础音色
+      oscillator.frequency.value = frequency;
+      
+      // 创建增益节点控制音量
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0;
+      
+      // 连接节点
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // 设置音量包络
+      const now = audioContext.currentTime;
+      gainNode.gain.setValueAtTime(0, now + startTime);
+      gainNode.gain.linearRampToValueAtTime(volume, now + startTime + 0.01); // 快速上升
+      
+      // 多阶段衰减模拟钢琴音符
+      gainNode.gain.setValueAtTime(volume, now + startTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(volume * 0.7, now + startTime + 0.2);
+      gainNode.gain.exponentialRampToValueAtTime(volume * 0.5, now + startTime + 0.5);
+      gainNode.gain.exponentialRampToValueAtTime(volume * 0.3, now + startTime + 1.0);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + startTime + 2.0);
+      
+      // 启动振荡器
+      oscillator.start(now + startTime);
+      oscillator.stop(now + startTime + 2.5);
+      
+      // 添加钢琴谐波
+      addPianoHarmonics(audioContext, frequency, startTime, volume);
+    }
+    
+    // 添加钢琴谐波
+    function addPianoHarmonics(audioContext, baseFreq, startTime, volume) {
+      // 钢琴音色的谐波结构
+      const harmonics = [
+        { ratio: 2.0, gain: 0.5 },    // 八度
+        { ratio: 3.0, gain: 0.25 },   // 八度+五度
+        { ratio: 4.0, gain: 0.15 },   // 两个八度
+        { ratio: 5.0, gain: 0.1 },    // 两个八度+大三度
+        { ratio: 6.0, gain: 0.05 }    // 两个八度+五度
+      ];
+      
+      harmonics.forEach(harmonic => {
+        const harmonicOsc = audioContext.createOscillator();
+        harmonicOsc.type = 'sine';
+        harmonicOsc.frequency.value = baseFreq * harmonic.ratio;
+        
+        const harmonicGain = audioContext.createGain();
+        harmonicGain.gain.value = 0;
+        
+        harmonicOsc.connect(harmonicGain);
+        harmonicGain.connect(audioContext.destination);
+        
+        const now = audioContext.currentTime;
+        harmonicGain.gain.setValueAtTime(0, now + startTime);
+        harmonicGain.gain.linearRampToValueAtTime(volume * harmonic.gain, now + startTime + 0.01);
+        harmonicGain.gain.exponentialRampToValueAtTime(volume * harmonic.gain * 0.5, now + startTime + 0.5);
+        harmonicGain.gain.exponentialRampToValueAtTime(0.001, now + startTime + 1.5 + Math.random());
+        
+        harmonicOsc.start(now + startTime);
+        harmonicOsc.stop(now + startTime + 2.5);
+      });
+      
+      // 添加噪声成分模拟钢琴击弦声
+      addPianoAttackNoise(audioContext, startTime, volume);
+    }
+    
+    // 添加钢琴击弦噪声
+    function addPianoAttackNoise(audioContext, startTime, volume) {
+      const bufferSize = audioContext.sampleRate * 0.1; // 100ms噪声
+      const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      
+      // 生成白噪声
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+      
+      // 创建噪声源
+      const noise = audioContext.createBufferSource();
+      noise.buffer = noiseBuffer;
+      
+      // 创建滤波器使噪声更接近钢琴击弦声
+      const filter = audioContext.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1000;
+      filter.Q.value = 1;
+      
+      // 创建增益节点控制音量
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0;
+      
+      // 连接节点
+      noise.connect(filter);
+      filter.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // 设置音量包络 - 非常短暂的噪声
+      const now = audioContext.currentTime;
+      gainNode.gain.setValueAtTime(0, now + startTime);
+      gainNode.gain.linearRampToValueAtTime(volume * 0.3, now + startTime + 0.005);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + startTime + 0.1);
+      
+      // 启动噪声
+      noise.start(now + startTime);
+      noise.stop(now + startTime + 0.1);
+    }
+    
+    // 播放简单的钢琴音阶
+    function playSimplePianoScale(audioContext) {
+      const scale = [
+        261.63, // C4
+        293.66, // D4
+        329.63, // E4
+        349.23, // F4
+        392.00, // G4
+        440.00, // A4
+        493.88, // B4
+        523.25  // C5
+      ];
+      
+      scale.forEach((freq, i) => {
+        createPianoNote(audioContext, freq, i * 0.5, 0.7);
+      });
+      
+      // 播放和弦
+      setTimeout(() => {
+        createPianoNote(audioContext, 261.63, 4.5, 0.6); // C
+        createPianoNote(audioContext, 329.63, 4.5, 0.6); // E
+        createPianoNote(audioContext, 392.00, 4.5, 0.6); // G
+      }, 100);
+    }
+    
+    // 将AudioBuffer转换为WAV格式
+    function audioBufferToWav(buffer) {
+      const numChannels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const format = 1; // PCM
+      const bitDepth = 16;
+      
+      let result;
+      if (numChannels === 2) {
+        result = interleave(buffer.getChannelData(0), buffer.getChannelData(1));
+      } else {
+        result = buffer.getChannelData(0);
+      }
+      
+      const bytesPerSample = bitDepth / 8;
+      const blockAlign = numChannels * bytesPerSample;
+      
+      const buffer2 = new ArrayBuffer(44 + result.length * bytesPerSample);
+      const view = new DataView(buffer2);
+      
+      // RIFF标识
+      writeString(view, 0, 'RIFF');
+      // RIFF块大小
+      view.setUint32(4, 36 + result.length * bytesPerSample, true);
+      // RIFF类型
+      writeString(view, 8, 'WAVE');
+      // 格式块标识
+      writeString(view, 12, 'fmt ');
+      // 格式块大小
+      view.setUint32(16, 16, true);
+      // 音频格式（PCM）
+      view.setUint16(20, format, true);
+      // 声道数
+      view.setUint16(22, numChannels, true);
+      // 采样率
+      view.setUint32(24, sampleRate, true);
+      // 字节率
+      view.setUint32(28, sampleRate * blockAlign, true);
+      // 块对齐
+      view.setUint16(32, blockAlign, true);
+      // 每个样本的位数
+      view.setUint16(34, bitDepth, true);
+      // 数据块标识
+      writeString(view, 36, 'data');
+      // 数据块大小
+      view.setUint32(40, result.length * bytesPerSample, true);
+      
+      // 写入PCM样本
+      floatTo16BitPCM(view, 44, result);
+      
+      return new Blob([view], { type: 'audio/wav' });
+    }
+    
+    function writeString(view, offset, string) {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    }
+    
+    function floatTo16BitPCM(output, offset, input) {
+      for (let i = 0; i < input.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+    }
+    
+    function interleave(leftChannel, rightChannel) {
+      const length = leftChannel.length + rightChannel.length;
+      const result = new Float32Array(length);
+      
+      let inputIndex = 0;
+      for (let i = 0; i < length;) {
+        result[i++] = leftChannel[inputIndex];
+        result[i++] = rightChannel[inputIndex];
+        inputIndex++;
+      }
+      
+      return result;
+    }
+  </script>
+</body>
+</html> 
